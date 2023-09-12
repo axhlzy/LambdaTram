@@ -1,7 +1,11 @@
 # LambdaTram
-This class is used to register lambda function and convert it to a function pointer.
 
+This class is used to register lambda function and convert it to a function pointer.
 resolve the problem that Dobby can only pass function pointer as callback, but not lambda expression with captured parameters
+
+使用编译器宏 __COUNTER__ 确定每一个不同的ID， 并使用ID对应std::function保存起来
+Trampoline 根据ID去查询静态变量 static inline std::unordered_map<int, std::any> map_; 中的 function 并调用
+返回对应不同的 &Trampoline<ID, Ret, Args...>
 
 ---
 
