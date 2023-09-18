@@ -40,89 +40,58 @@
 ```
  */
 
-
 #include <iostream>
-#include <functional>
 #include <unordered_map>
-#include <tuple>
-#include <any>
-#include <android/log.h>
+#include <functional>
+#include <mutex>
+#include <type_traits>
 
 using namespace std;
 
-template<int N>
+#define T int
+
+template<T N>
 struct Counter {
-    static const int value = N;
+    static const T value = N;
 };
+
+template<T ID, typename Func>
+struct FunctionWrapper;
+
+template<T ID, typename Ret, typename ...Args>
+struct FunctionWrapper<ID, std::function<Ret(Args...)>> {
+    static std::function<Ret(Args...)> func;
+
+    static Ret Trampoline(Args... args) {
+        return func(args...);
+    }
+};
+
+template<T ID, typename Ret, typename ...Args>
+std::function<Ret(Args...)> FunctionWrapper<ID, std::function<Ret(Args...)>>::func;
 
 class LambdaTram {
 public:
-    template<int ID, typename Ret, typename ...Args>
+    template<T ID, typename Ret, typename ...Args>
     static void* RegisterAndConvert(std::function<Ret(Args...)> func) {
-        std::lock_guard<std::mutex> lock(map_mutex_);
-        map_[ID] = func;
-        return reinterpret_cast<void*>(&Trampoline<ID, Ret, Args...>);
+        FunctionWrapper<ID, std::function<Ret(Args...)>>::func = func;
+        return reinterpret_cast<void*>(&FunctionWrapper<ID, std::function<Ret(Args...)>>::Trampoline);
     }
 
-    template<int ID, typename Callable>
-    static void* RegisterAndConvert(Callable&& func) {
-        return RegisterAndConvert<ID>(std::function(func));
+    template<T ID, typename Callable>
+    static void* RegisterAndConvert(Callable&& callable) {
+        return RegisterAndConvert<ID>(std::function(callable));
     }
 
-    template<int ID, typename Ret, typename ...Args>
+    template<T ID, typename Ret, typename ...Args>
     static Ret Execute(Args... args) {
-        std::lock_guard<std::mutex> lock(map_mutex_);
-        auto it = map_.find(ID);
-        if (it != map_.end()) {
-            auto actual_lambda = std::any_cast<std::function<Ret(Args...)>>(it->second);
-            return actual_lambda(args...);
-        }
-        return reinterpret_cast<Ret>(nullptr);
+        return FunctionWrapper<ID, std::function<Ret(Args...)>>::Trampoline(args...);
     }
-
-    template<int ID>
-    static void Unregister() {
-        std::lock_guard<std::mutex> lock(map_mutex_);
-        map_.erase(ID);
-    }
-
-private:
-    template<int ID, typename Ret, typename... Args>
-    static Ret Trampoline(Args... args) {
-        auto it = map_.find(ID);
-        try {
-            if (it != map_.end()) {
-                auto func = std::any_cast<std::function<Ret(Args...)>>(it->second);
-                return func(args...);
-            }
-            return Ret();
-        } catch (const std::bad_any_cast& e) {
-            __android_log_print(ANDROID_LOG_ERROR, "LambdaTram", "bad_any_cast: %s", e.what());
-            return nullptr;
-        }
-    }
-
-private:
-    static inline std::unordered_map<int, std::any> map_;
-    static inline std::mutex map_mutex_;
 };
 
-template<typename T>
-struct FunctionTraits;
+#define REGISTER_LAMBDA(func) LambdaTram::RegisterAndConvert<Counter<__COUNTER__>::value>(func)
+#define REGISTER_LAMBDA_ID(ID, func) LambdaTram::RegisterAndConvert<ID>(func)
 
-template<typename Ret, typename... Args>
-struct FunctionTraits<std::function<Ret(Args...)>> {
-    using PointerType = Ret(*)(Args...);
-};
-
-#define DEFINE_LAMBDA_TYPE(func) \
-    using LambdaType = FunctionTraits<decltype(func)>::PointerType; \
-
-#define REGISTER_LAMBDA(func) \
-    LambdaTram::RegisterAndConvert<Counter<__COUNTER__>::value>(func); \
-    // DEFINE_LAMBDA_TYPE(func) \
-
-#define UNREGISTER_LAMBDA() \
-    LambdaTram::Unregister<Counter<__COUNTER__>::value>() \
+#undef T
 
 #endif //IL2CPPHOOKER_LAMBDATRAM_HPP
