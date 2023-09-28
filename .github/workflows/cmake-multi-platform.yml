@@ -1,4 +1,4 @@
-name: CMake and NDK on multiple platforms
+name: Build test with NDK on multiple platforms
 
 on:
   push:
@@ -27,13 +27,6 @@ jobs:
           - os: ubuntu-latest
             c_compiler: clang
             cpp_compiler: clang++
-        exclude:
-          - os: windows-latest
-            c_compiler: gcc
-          - os: windows-latest
-            c_compiler: clang
-          - os: ubuntu-latest
-            c_compiler: cl
 
     steps:
     - uses: actions/checkout@v3
@@ -53,7 +46,19 @@ jobs:
       run: |
         echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_ENV"
 
-    - name: Configure CMake
+    - name: Configure CMake for Unix-like OS
+      if: matrix.os != 'windows-latest'
+      run: >
+        cmake -B ${{ github.workspace }}/test/build
+        -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake
+        -DANDROID_PLATFORM=android-21
+        -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
+        -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
+        -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        -S ${{ github.workspace }}/test  
+
+    - name: Configure CMake for Windows
+      if: matrix.os == 'windows-latest'
       run: >
         cmake -B ${{ github.workspace }}/test/build
         -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
